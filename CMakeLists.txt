@@ -147,6 +147,14 @@ target_link_libraries(qwen3-tts-cli PRIVATE
     qwen3_tts
 )
 
+# Persistent daemon executable for HTTP endpoints
+add_executable(qwen3-tts-daemon
+    src/qwen3_tts_daemon.cpp
+)
+target_link_libraries(qwen3-tts-daemon PRIVATE
+    qwen3_tts
+)
+
 # Test executable for tokenizer
 add_executable(test_tokenizer
     tests/test_tokenizer.cpp
@@ -184,7 +192,7 @@ target_link_libraries(test_decoder PRIVATE
 )
 
 # Install targets
-install(TARGETS text_tokenizer tts_transformer audio_tokenizer_encoder audio_tokenizer_decoder qwen3_tts qwen3-tts-cli
+install(TARGETS text_tokenizer tts_transformer audio_tokenizer_encoder audio_tokenizer_decoder qwen3_tts qwen3-tts-cli qwen3-tts-daemon
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
 )
