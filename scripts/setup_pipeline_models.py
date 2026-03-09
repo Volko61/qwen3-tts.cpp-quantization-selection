@@ -3,14 +3,17 @@
 One-shot model setup for qwen3-tts.cpp.
 
 This script downloads required Hugging Face model assets and generates all model
-artifacts needed by the final C++ pipeline:
+artifacts needed by the final C++ pipeline.
 
-- models/qwen3-tts-0.6b-f16.gguf
-- models/qwen3-tts-tokenizer-f16.gguf
+The GGUF output filenames include their selected quantization types, for
+example:
+
+- models/qwen3-tts-0.6b-q4_k.gguf
+- models/qwen3-tts-tokenizer-q8_0.gguf
 - models/coreml/code_predictor.mlpackage (optional, macOS)
 
 Example:
-  python scripts/setup_pipeline_models.py
+    python scripts/setup_pipeline_models.py --tts-type q4_k --tokenizer-type q8_0
 
 Minimal usage for CI/offline conversion:
   python scripts/setup_pipeline_models.py --skip-download
@@ -39,6 +42,12 @@ BASE_REPO_IDS = [
 TOKENIZER_REPO_IDS = [
     "Qwen/Qwen3-TTS-Tokenizer-12Hz",
 ]
+
+TTS_GGUF_TYPES = ("f16", "f32", "q8_0", "q4_k")
+TOKENIZER_GGUF_TYPES = ("f16", "f32", "q8_0")
+
+DEFAULT_TTS_GGUF_TYPE = "q4_k"
+DEFAULT_TOKENIZER_GGUF_TYPE = "q8_0"
 
 
 def eprint(msg: str) -> None:
@@ -155,12 +164,18 @@ def ensure_tokenizer_assets(
     return tokenizer_dir
 
 
+def gguf_output_path(models_dir: Path, stem: str, output_type: str) -> Path:
+    return models_dir / f"{stem}-{output_type}.gguf"
+
+
 def convert_gguf(
     python_exe: str,
     base_dir: Path,
     tokenizer_input_dir: Path,
     out_tts: Path,
     out_tok: Path,
+    tts_type: str,
+    tokenizer_type: str,
     force_convert: bool,
 ) -> None:
     require_modules(
@@ -188,7 +203,7 @@ def convert_gguf(
                 "--output",
                 str(out_tts),
                 "--type",
-                "f16",
+                tts_type,
             ],
             cwd=REPO_ROOT,
         )
@@ -205,7 +220,7 @@ def convert_gguf(
                 "--output",
                 str(out_tok),
                 "--type",
-                "f16",
+                tokenizer_type,
             ],
             cwd=REPO_ROOT,
         )
@@ -259,6 +274,24 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--skip-download", action="store_true", help="Skip model downloads")
     p.add_argument("--skip-gguf", action="store_true", help="Skip GGUF conversion")
     p.add_argument(
+        "--tts-type",
+        choices=TTS_GGUF_TYPES,
+        default=DEFAULT_TTS_GGUF_TYPE,
+        help=(
+            "Quantization for the main TTS GGUF "
+            f"(default: {DEFAULT_TTS_GGUF_TYPE})"
+        ),
+    )
+    p.add_argument(
+        "--tokenizer-type",
+        choices=TOKENIZER_GGUF_TYPES,
+        default=DEFAULT_TOKENIZER_GGUF_TYPE,
+        help=(
+            "Quantization for the tokenizer/vocoder GGUF "
+            f"(default: {DEFAULT_TOKENIZER_GGUF_TYPE})"
+        ),
+    )
+    p.add_argument(
         "--coreml",
         choices=["auto", "on", "off"],
         default="auto",
@@ -274,8 +307,8 @@ def main() -> int:
     models_dir = Path(args.models_dir).resolve()
     base_dir = models_dir / "Qwen3-TTS-12Hz-0.6B-Base"
     tokenizer_dir = models_dir / "Qwen3-TTS-Tokenizer-12Hz"
-    out_tts = models_dir / "qwen3-tts-0.6b-f16.gguf"
-    out_tok = models_dir / "qwen3-tts-tokenizer-f16.gguf"
+    out_tts = gguf_output_path(models_dir, "qwen3-tts-0.6b", args.tts_type)
+    out_tok = gguf_output_path(models_dir, "qwen3-tts-tokenizer", args.tokenizer_type)
     out_coreml = models_dir / "coreml" / "code_predictor.mlpackage"
 
     hf_token = args.hf_token.strip() or None
@@ -290,7 +323,16 @@ def main() -> int:
         tokenizer_input_dir = base_dir if (base_dir / "speech_tokenizer" / "model.safetensors").exists() else tokenizer_dir
 
     if not args.skip_gguf:
-        convert_gguf(sys.executable, base_dir, tokenizer_input_dir, out_tts, out_tok, args.force)
+        convert_gguf(
+            sys.executable,
+            base_dir,
+            tokenizer_input_dir,
+            out_tts,
+            out_tok,
+            args.tts_type,
+            args.tokenizer_type,
+            args.force,
+        )
 
     wants_coreml = args.coreml == "on" or (args.coreml == "auto" and platform.system() == "Darwin")
     if wants_coreml:
