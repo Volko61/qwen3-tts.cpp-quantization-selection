@@ -9,6 +9,8 @@ void print_usage(const char * program) {
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -m, --model <dir>      Model directory (required)\n");
+    fprintf(stderr, "  --tts-model <file>     Explicit TTS model GGUF (overrides discovery)\n");
+    fprintf(stderr, "  --tokenizer-model <file> Explicit tokenizer/vocoder GGUF\n");
     fprintf(stderr, "  -t, --text <text>      Text to synthesize (required)\n");
     fprintf(stderr, "  -o, --output <file>    Output WAV file (default: output.wav)\n");
     fprintf(stderr, "  -r, --reference <file> Reference audio for voice cloning\n");
@@ -31,6 +33,8 @@ int main(int argc, char ** argv) {
     std::string text;
     std::string output_file = "output.wav";
     std::string reference_audio;
+    std::string explicit_tts_model;
+    std::string explicit_tokenizer_model;
     
     qwen3_tts::tts_params params;
     
@@ -65,6 +69,18 @@ int main(int argc, char ** argv) {
                 return 1;
             }
             reference_audio = argv[i];
+        } else if (arg == "--tts-model") {
+            if (++i >= argc) {
+                fprintf(stderr, "Error: missing tts model path\n");
+                return 1;
+            }
+            explicit_tts_model = argv[i];
+        } else if (arg == "--tokenizer-model") {
+            if (++i >= argc) {
+                fprintf(stderr, "Error: missing tokenizer model path\n");
+                return 1;
+            }
+            explicit_tokenizer_model = argv[i];
         } else if (arg == "--temperature") {
             if (++i >= argc) {
                 fprintf(stderr, "Error: missing temperature value\n");
@@ -145,7 +161,7 @@ int main(int argc, char ** argv) {
     qwen3_tts::Qwen3TTS tts;
     
     fprintf(stderr, "Loading models from: %s\n", model_dir.c_str());
-    if (!tts.load_models(model_dir)) {
+    if (!tts.load_models(model_dir, explicit_tts_model, explicit_tokenizer_model)) {
         fprintf(stderr, "Error: %s\n", tts.get_error().c_str());
         return 1;
     }
