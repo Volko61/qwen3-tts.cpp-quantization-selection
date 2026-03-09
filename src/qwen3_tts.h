@@ -86,7 +86,12 @@ public:
     
     // Load all models from directory
     // model_dir should contain: transformer.gguf, tokenizer.gguf, vocoder.gguf
-    bool load_models(const std::string & model_dir);
+    // If `tts_model_path` or `tokenizer_model_path` are non-empty they override
+    // the automatic discovery logic and are used verbatim. The overrides can
+    // either be absolute paths or relative to `model_dir`.
+    bool load_models(const std::string & model_dir,
+                     const std::string & tts_model_path = std::string(),
+                     const std::string & tokenizer_model_path = std::string());
     
     // Generate speech from text
     // text: input text to synthesize
