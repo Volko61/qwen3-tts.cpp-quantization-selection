@@ -3,11 +3,13 @@
 
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <fstream>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
@@ -16,6 +18,8 @@
 #endif
 
 namespace qwen3_tts {
+
+namespace fs = std::filesystem;
 
 static int64_t get_time_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -81,6 +85,46 @@ static void log_memory_usage(const char * label) {
             format_bytes(mem.phys_footprint_bytes).c_str());
 }
 
+static std::string find_model_file(const std::string & model_dir, const std::string & stem) {
+    const fs::path dir(model_dir);
+    std::error_code ec;
+    if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec)) {
+        return "";
+    }
+
+    static const char * preferred_types[] = { "f16", "q8_0", "q4_k", "f32" };
+    for (const char * type : preferred_types) {
+        const fs::path candidate = dir / (stem + "-" + type + ".gguf");
+        ec.clear();
+        if (fs::exists(candidate, ec) && fs::is_regular_file(candidate, ec)) {
+            return candidate.string();
+        }
+    }
+
+    std::vector<std::string> matches;
+    for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+        const fs::directory_entry & entry = *it;
+        ec.clear();
+        if (!entry.is_regular_file(ec)) {
+            ec.clear();
+            continue;
+        }
+
+        const fs::path path = entry.path();
+        const std::string filename = path.filename().string();
+        if (path.extension() == ".gguf" && filename.rfind(stem + "-", 0) == 0) {
+            matches.push_back(path.string());
+        }
+    }
+
+    if (matches.empty()) {
+        return "";
+    }
+
+    std::sort(matches.begin(), matches.end());
+    return matches.front();
+}
+
 static void resample_linear(const float * input, int input_len, int input_rate,
                             std::vector<float> & output, int output_rate) {
     double ratio = (double)input_rate / output_rate;
@@ -105,7 +149,9 @@ Qwen3TTS::Qwen3TTS() = default;
 
 Qwen3TTS::~Qwen3TTS() = default;
 
-bool Qwen3TTS::load_models(const std::string & model_dir) {
+bool Qwen3TTS::load_models(const std::string & model_dir,
+                           const std::string & tts_model_override,
+                           const std::string & tokenizer_model_override) {
     int64_t t_start = get_time_ms();
     log_memory_usage("load/start");
 
@@ -114,9 +160,37 @@ bool Qwen3TTS::load_models(const std::string & model_dir) {
     transformer_loaded_ = false;
     decoder_loaded_ = false;
     
-    // Construct model paths
-    std::string tts_model_path = model_dir + "/qwen3-tts-0.6b-f16.gguf";
-    std::string tokenizer_model_path = model_dir + "/qwen3-tts-tokenizer-f16.gguf";
+    // Determine which files to load.  The caller may override by providing
+    // explicit paths, otherwise we auto-discover based on stem + preferred
+    // ordering.
+    std::string tts_model_path;
+    if (!tts_model_override.empty()) {
+        tts_model_path = tts_model_override;
+        if (!fs::path(tts_model_path).is_absolute()) {
+            tts_model_path = fs::path(model_dir) / tts_model_path;
+        }
+    } else {
+        tts_model_path = find_model_file(model_dir, "qwen3-tts-0.6b");
+        if (tts_model_path.empty()) {
+            error_msg_ = "No TTS model found in " + model_dir + " (expected qwen3-tts-0.6b-*.gguf)";
+            return false;
+        }
+    }
+
+    std::string tokenizer_model_path;
+    if (!tokenizer_model_override.empty()) {
+        tokenizer_model_path = tokenizer_model_override;
+        if (!fs::path(tokenizer_model_path).is_absolute()) {
+            tokenizer_model_path = fs::path(model_dir) / tokenizer_model_path;
+        }
+    } else {
+        tokenizer_model_path = find_model_file(model_dir, "qwen3-tts-tokenizer");
+        if (tokenizer_model_path.empty()) {
+            error_msg_ = "No tokenizer model found in " + model_dir + " (expected qwen3-tts-tokenizer-*.gguf)";
+            return false;
+        }
+    }
+
     tts_model_path_ = tts_model_path;
     decoder_model_path_ = tokenizer_model_path;
     encoder_loaded_ = false;
