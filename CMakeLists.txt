@@ -131,6 +131,9 @@ target_include_directories(qwen3_tts PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${GGML_DIR}/include
 )
+target_link_directories(qwen3_tts PUBLIC
+    ${GGML_BUILD_DIR}/src
+)
 target_link_libraries(qwen3_tts PUBLIC
     text_tokenizer
     tts_transformer
