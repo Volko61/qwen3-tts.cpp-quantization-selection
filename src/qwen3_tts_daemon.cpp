@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -85,6 +86,7 @@ void print_usage(const char * program) {
     std::fprintf(stderr, "\n");
     std::fprintf(stderr, "Protocol on stdin:\n");
     std::fprintf(stderr, "  SYNTH\\n<language>\\n<output_path>\\n<hex_utf8_text>\\n\n");
+    std::fprintf(stderr, "  SYNTH2\\n<language>\\n<output_path>\\n<speaker_path_or_empty>\\n<hex_utf8_text>\\n\n");
     std::fprintf(stderr, "  QUIT\\n\n");
 }
 
@@ -181,6 +183,8 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    std::unordered_map<std::string, std::vector<float>> speaker_cache;
+
     std::printf("READY\n");
     std::fflush(stdout);
 
@@ -196,7 +200,7 @@ int main(int argc, char ** argv) {
             return 0;
         }
 
-        if (command != "SYNTH") {
+        if (command != "SYNTH" && command != "SYNTH2") {
             std::printf("ERR\nunknown command\n");
             std::fflush(stdout);
             continue;
@@ -204,11 +208,26 @@ int main(int argc, char ** argv) {
 
         std::string language;
         std::string output_path;
+        std::string speaker_path;
         std::string text_hex;
-        if (!read_line(language) || !read_line(output_path) || !read_line(text_hex)) {
+        if (!read_line(language) || !read_line(output_path)) {
             std::printf("ERR\nincomplete request\n");
             std::fflush(stdout);
             return 1;
+        }
+
+        if (command == "SYNTH2") {
+            if (!read_line(speaker_path) || !read_line(text_hex)) {
+                std::printf("ERR\nincomplete request\n");
+                std::fflush(stdout);
+                return 1;
+            }
+        } else {
+            if (!read_line(text_hex)) {
+                std::printf("ERR\nincomplete request\n");
+                std::fflush(stdout);
+                return 1;
+            }
         }
 
         std::string text;
@@ -227,7 +246,23 @@ int main(int argc, char ** argv) {
         }
 
         params.language_id = language_id;
-        qwen3_tts::tts_result result = tts.synthesize(text, params);
+        qwen3_tts::tts_result result;
+        if (!speaker_path.empty()) {
+            auto it = speaker_cache.find(speaker_path);
+            if (it == speaker_cache.end()) {
+                std::vector<float> embedding;
+                if (!qwen3_tts::load_speaker_embedding(speaker_path, embedding)) {
+                    std::printf("ERR\nfailed to load speaker embedding: %s\n", speaker_path.c_str());
+                    std::fflush(stdout);
+                    continue;
+                }
+                it = speaker_cache.emplace(speaker_path, std::move(embedding)).first;
+            }
+            result = tts.synthesize_with_embedding(text, it->second, params);
+        } else {
+            result = tts.synthesize(text, params);
+        }
+
         if (!result.success) {
             std::printf("ERR\n%s\n", result.error_msg.c_str());
             std::fflush(stdout);

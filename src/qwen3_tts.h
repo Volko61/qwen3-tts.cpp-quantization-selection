@@ -92,6 +92,15 @@ public:
     bool load_models(const std::string & model_dir,
                      const std::string & tts_model_path = std::string(),
                      const std::string & tokenizer_model_path = std::string());
+
+    // Extract speaker embedding without synthesizing.
+    bool extract_speaker_embedding(const std::string & reference_audio,
+                                   std::vector<float> & embedding);
+
+    // Generate speech using a precomputed speaker embedding.
+    tts_result synthesize_with_embedding(const std::string & text,
+                                         const std::vector<float> & embedding,
+                                         const tts_params & params = tts_params());
     
     // Generate speech from text
     // text: input text to synthesize
@@ -154,5 +163,11 @@ bool load_audio_file(const std::string & path, std::vector<float> & samples,
 // Utility: Save audio file (WAV format)
 bool save_audio_file(const std::string & path, const std::vector<float> & samples,
                      int sample_rate);
+
+// Utility: Save speaker embedding to a binary file.
+bool save_speaker_embedding(const std::string & path, const std::vector<float> & embedding);
+
+// Utility: Load speaker embedding from a binary file.
+bool load_speaker_embedding(const std::string & path, std::vector<float> & embedding);
 
 } // namespace qwen3_tts
